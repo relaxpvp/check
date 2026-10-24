@@ -67,7 +67,7 @@ function Draw {
     [void]$o.Append("$E[H$E[2J`n")
     $logo | ForEach-Object { & $L $_ }
     & $L ''
-    & $L ((' ' * 8) + $soft + 'P V P' + $dim + '  ·  ' + $red + 'P R E - S C A N' + $R)
+    & $L ((' ' * 15) + $soft + 'P V P' + $dim + '  ·  ' + $red + 'P R E - S C A N' + $R)
     & $L ''
     & $L ($dim + "  $env:COMPUTERNAME  ·  build $($os.BuildNumber)  ·  ligado há $upTxt" + $R)
     & $L ''
