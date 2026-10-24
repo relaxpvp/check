@@ -151,6 +151,19 @@ try {
     }
 }
 
+function Scan-Animation {
+    $spin  = '|', '/', '-', '\'
+    $steps = 28
+    for ($i = 0; $i -le $steps; $i++) {
+        $bar  = $red + ('█' * $i) + $dim + ('░' * ($steps - $i))
+        $pct  = [int](100 * $i / $steps)
+        Say ($red + $spin[$i % $spin.Count] + $soft + '  A analisar  ' + $bar + $white + (' {0,3}%' -f $pct) + $R)
+        Start-Sleep -Milliseconds 40
+    }
+    Say ($green + '✓' + $soft + '  Análise concluída' + $R)
+    Start-Sleep -Milliseconds 350
+}
+
 # ---------- loop ----------
 Write-Host "$E[?1049h$E[?25l" -NoNewline   # ecrã alternativo + esconde cursor
 try {
@@ -158,6 +171,7 @@ try {
         Draw
         $c = Read-Choice
         if ($c -eq 'Q') { break }
+        if ($c -eq 'R') { Scan-Animation }
         if ($c -eq 'A' -and $missing.Count) { Enable-Services $missing }
         if ($c -match '^\d$') {
             $idx = if ($c -eq '0') { 9 } else { [int]$c - 1 }
