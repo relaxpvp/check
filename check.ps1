@@ -1,190 +1,173 @@
-$services = 'PCAsvc','DPS','DiagTrack','EventLog','SysMain','Schedule','DusmSvc','Appinfo','WSearch'
+# RelaxPvP - Pre-Scan
+# Verifica se os serviços do Windows usados na verificação (screenshare) estão ligados.
+# Uso: irm check.relaxpvp.gg | iex
 
-# Used only when a service is Disabled
-$startupTypes = @{
-    PCAsvc    = 'Manual'
-    DPS       = 'Automatic'
-    DiagTrack = 'Automatic'
-    EventLog  = 'Automatic'
-    SysMain   = 'Automatic'
-    Schedule  = 'Automatic'
-    DusmSvc   = 'Automatic'
-    Appinfo   = 'Manual'
-    WSearch   = 'Automatic'
+$ErrorActionPreference = 'SilentlyContinue'
+try { $Host.UI.RawUI.WindowTitle = 'RelaxPvP  ·  Pre-Scan' } catch {}
+
+# nome -> descrição, arranque a repor se estiver Disabled ($null = driver, só verifica)
+$services = [ordered]@{
+    PcaSvc    = @('Histórico de programas',     'Manual')
+    DPS       = @('Diagnóstico do sistema',     'Automatic')
+    DiagTrack = @('Telemetria',                 'Automatic')
+    EventLog  = @('Registo de eventos',         'Automatic')
+    SysMain   = @('Prefetch / Superfetch',      'Automatic')
+    Schedule  = @('Agendador de tarefas',       'Automatic')
+    DusmSvc   = @('Uso de dados',               'Automatic')
+    Appinfo   = @('Informação de aplicações',   'Manual')
+    WSearch   = @('Pesquisa do Windows',        'Automatic')
+    bam       = @('Atividade em segundo plano', $null)
 }
 
-function Start-ServiceAsAdmin {
-    param(
-        [string[]]$Names
-    )
+# ---------- estilo ----------
+$E = [char]27
+$R = "$E[0m"
+function fg($r, $g, $b) { "$E[38;2;$r;$g;${b}m" }
+$dim   = fg 100 100 110
+$soft  = fg 165 165 175
+$white = fg 240 240 245
+$red   = fg 255 70 80
+$green = fg 110 240 160
+$yellow = fg 255 200 90
+$W = 56   # largura do bloco
 
-    if (-not $Names -or $Names.Count -eq 0) {
-        return
+function Gradient([string]$text, $from, $to) {
+    $n = [math]::Max(1, $text.Length - 1)
+    $sb = New-Object Text.StringBuilder
+    for ($i = 0; $i -lt $text.Length; $i++) {
+        $t = $i / $n
+        [void]$sb.Append((fg ([int]($from[0] + ($to[0] - $from[0]) * $t)) ([int]($from[1] + ($to[1] - $from[1]) * $t)) ([int]($from[2] + ($to[2] - $from[2]) * $t))))
+        [void]$sb.Append($text[$i])
     }
-
-    $errorFile = Join-Path $env:TEMP ("relaxpvp_service_" + [guid]::NewGuid().ToString() + ".txt")
-
-    $commands = @()
-
-    foreach ($name in $Names) {
-
-        $safeName = $name.Replace("'", "''")
-        $startupType = $startupTypes[$name]
-
-        $commands += @"
-try {
-    `$svcInfo = Get-CimInstance Win32_Service -Filter "Name='$safeName'" -ErrorAction Stop
-
-    if (`$svcInfo.StartMode -eq 'Disabled') {
-        Set-Service -Name '$safeName' -StartupType $startupType -ErrorAction Stop
-        Start-Sleep -Milliseconds 300
-    }
-
-    `$svc = Get-Service -Name '$safeName' -ErrorAction Stop
-
-    if (`$svc.Status -ne 'Running') {
-        Start-Service -Name '$safeName' -ErrorAction Stop
-        `$svc.WaitForStatus('Running', [TimeSpan]::FromSeconds(10))
-    }
-}
-catch {
-    Add-Content -LiteralPath '$errorFile' -Value ('$safeName : ' + `$_.Exception.Message)
-}
-"@
-    }
-
-    $command = $commands -join "`r`n"
-
-    $bytes = [System.Text.Encoding]::Unicode.GetBytes($command)
-    $encodedCommand = [Convert]::ToBase64String($bytes)
-
-    try {
-        Start-Process `
-            -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
-            -Verb RunAs `
-            -ArgumentList '-NoProfile', '-EncodedCommand', $encodedCommand `
-            -Wait `
-            -ErrorAction Stop
-
-        Start-Sleep -Milliseconds 750
-
-        if (Test-Path $errorFile) {
-            $errors = Get-Content $errorFile
-
-            if ($errors) {
-                Write-Host ""
-                Write-Host "Nao foi possivel ativar:" -ForegroundColor Red
-
-                foreach ($err in $errors) {
-                    Write-Host " - $err" -ForegroundColor Red
-                }
-
-                Write-Host ""
-                Read-Host "Pressiona ENTER para continuar"
-            }
-
-            Remove-Item $errorFile -Force -ErrorAction SilentlyContinue
-        }
-    }
-    catch {
-        Write-Host ""
-        Write-Host "Permissao de administrador cancelada." -ForegroundColor Yellow
-        Start-Sleep -Seconds 1
-    }
+    $sb.ToString() + $R
 }
 
-function Show-Menu {
-    Clear-Host
+# calculado uma vez
+$logo = @(
+    '██████╗ ███████╗██╗      █████╗ ██╗  ██╗'
+    '██╔══██╗██╔════╝██║     ██╔══██╗╚██╗██╔╝'
+    '██████╔╝█████╗  ██║     ███████║ ╚███╔╝ '
+    '██╔══██╗██╔══╝  ██║     ██╔══██║ ██╔██╗ '
+    '██║  ██║███████╗███████╗██║  ██║██╔╝ ██╗'
+    '╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝'
+) | ForEach-Object { (' ' * 8) + (Gradient $_ @(255, 75, 85) @(150, 0, 30)) }
+$os = Get-CimInstance Win32_OperatingSystem
+$boot = $os.LastBootUpTime
 
-    Write-Host "Pre-Scan RelaxPvP" -ForegroundColor Cyan
-    Write-Host "-----------------`n"
+function Draw {
+    $up = (Get-Date) - $boot
+    $upTxt = if ($up.Days -gt 0) { '{0}d {1}h' -f $up.Days, $up.Hours } else { '{0}h {1}m' -f $up.Hours, $up.Minutes }
+    $state = @{}
+    Get-Service -Name @($services.Keys) | ForEach-Object { $state[$_.Name] = [string]$_.Status }
+
+    $m = ' ' * [math]::Max(0, [int](($Host.UI.RawUI.WindowSize.Width - $W) / 2))
+    $o = New-Object Text.StringBuilder
+    $L = { param($s) [void]$o.Append($m + $s + "`n") }
+
+    [void]$o.Append("$E[H$E[2J`n")
+    $logo | ForEach-Object { & $L $_ }
+    & $L ''
+    & $L ((' ' * 8) + $soft + 'P V P' + $dim + '  ·  ' + $red + 'P R E - S C A N' + $R)
+    & $L ''
+    & $L ($dim + "  $env:COMPUTERNAME  ·  build $($os.BuildNumber)  ·  ligado há $upTxt" + $R)
+    & $L ''
 
     $script:missing = @()
-
-    for ($i = 0; $i -lt $services.Count; $i++) {
-        $name = $services[$i]
-
-        $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
-
-        Write-Host ("[{0}] {1,-12}" -f ($i + 1), $name) -NoNewline
-
-        if ($svc -and $svc.Status -eq 'Running') {
-            Write-Host " OK" -ForegroundColor Green
-        }
-        else {
-            Write-Host " EM FALTA" -ForegroundColor Red
-            $script:missing += $name
-        }
+    $script:removed = @()
+    $i = 0
+    foreach ($name in $services.Keys) {
+        $i++
+        $key = if ($i -eq 10) { '0' } else { "$i" }
+        $st = if ($state[$name] -eq 'Running') { $green + '● ativo' }
+              elseif (-not $state[$name]) { $script:missing += $name; $script:removed += $name; $yellow + '● removido' }
+              else { $script:missing += $name; $red + '● em falta' }
+        & $L ($dim + "  $key   " + $white + ('{0,-11}' -f $name) + $soft + ('{0,-28}' -f $services[$name][0]) + $st + $R)
     }
 
-    Write-Host ""
-    Write-Host ""
-
+    & $L ''
+    $ok = $services.Count - $missing.Count
     if ($missing.Count -eq 0) {
-        Write-Host "Estas OK para jogar" -ForegroundColor Green
-    }
-    else {
-        Write-Host "Tens estes servicos em falta:" -ForegroundColor Red
-
-        foreach ($name in $missing) {
-            Write-Host " - $name" -ForegroundColor Red
+        & $L ($green + '  ✓  Pronto para a verificação' + $dim + "   $ok/$($services.Count)" + $R)
+    } else {
+        & $L ($red + "  ✕  $($missing.Count) em falta" + $soft + ', ativa antes da verificação' + $dim + "   $ok/$($services.Count)" + $R)
+        if ($missing -contains 'bam' -and $removed -notcontains 'bam') { & $L ($yellow + '     bam é um driver: se continuar em falta, reinicia o PC.' + $R) }
+        if ($removed.Count) {
+            & $L ($yellow + "     $($removed -join ', '): não existe neste Windows" + $R)
+            & $L ($dim + '     (removido por otimizador/debloat, não dá para ligar daqui; fala com a staff)' + $R)
         }
-
-        Write-Host ""
-        Write-Host "[A] Ativar todos em falta"
     }
+    & $L ''
+    $keys = if (($missing | Where-Object { $removed -notcontains $_ }).Count) { $red + '  A' + $dim + ' ativar todos   ' + $white + '1-0' + $dim + ' só um   ' } else { '  ' }
+    & $L ($keys + $white + 'R' + $dim + ' reanalisar   ' + $white + 'Q' + $dim + ' sair' + $R)
 
-    Write-Host "[R] Atualizar"
-    Write-Host "[Q] Sair"
+    Write-Host $o.ToString() -NoNewline
 }
 
-:main while ($true) {
+function Say([string]$text) {
+    $m = ' ' * [math]::Max(0, [int](($Host.UI.RawUI.WindowSize.Width - $W) / 2))
+    Write-Host ("`r" + $m + '  ' + $text + "$E[K") -NoNewline
+}
 
-    Show-Menu
+function Read-Choice {
+    try { return ([string][Console]::ReadKey($true).KeyChar).ToUpper() }
+    catch { return (Read-Host "`n   Opção").ToUpper() }
+}
 
-    $choice = Read-Host "`nOpcao"
+function Enable-Services([string[]]$names) {
+    $fixable = @($names | Where-Object { $services[$_][1] -and $removed -notcontains $_ })
+    if ($fixable.Count -eq 0) { return }
 
-    switch ($choice.ToUpper()) {
+    $log = Join-Path $env:TEMP ("relaxpvp_check_" + [guid]::NewGuid() + '.txt')
+    $cmd = foreach ($n in $fixable) {
+        @"
+try {
+  if ((Get-CimInstance Win32_Service -Filter "Name='$n'").StartMode -eq 'Disabled') { Set-Service -Name '$n' -StartupType $($services[$n][1]) -ErrorAction Stop }
+  `$s = Get-Service -Name '$n' -ErrorAction Stop
+  if (`$s.Status -ne 'Running') { Start-Service -Name '$n' -ErrorAction Stop; `$s.WaitForStatus('Running', [TimeSpan]::FromSeconds(10)) }
+} catch { Add-Content -LiteralPath '$log' -Value ('$n : ' + `$_.Exception.Message) }
+"@
+    }
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(($cmd -join "`r`n")))
 
-        'A' {
-            if ($missing.Count -gt 0) {
-                Start-ServiceAsAdmin -Names $missing
-            }
-        }
+    Write-Host "`n" -NoNewline
+    Say ((fg 255 200 90) + 'Aceita o pedido de administrador...' + $R)
+    try {
+        $p = Start-Process "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -PassThru -WindowStyle Hidden -ErrorAction Stop `
+            -ArgumentList '-NoProfile', '-EncodedCommand', $enc
+    } catch {
+        Say ((fg 255 200 90) + 'Permissão de administrador cancelada.' + $R)
+        Start-Sleep 1
+        return
+    }
+    Say ($white + 'A ativar ' + $soft + ($fixable -join ', ') + $dim + '...' + $R)
+    $p.WaitForExit()
 
-        'R' {
-            # Refreshes automatically on next loop
-        }
+    if (Test-Path $log) {
+        Say ($red + 'Não foi possível ativar:' + $R); Write-Host ''
+        Get-Content $log | ForEach-Object { Say ($dim + '· ' + $soft + $_ + $R); Write-Host '' }
+        Remove-Item $log -Force
+        Say ($dim + 'Carrega numa tecla para continuar...' + $R)
+        $null = Read-Choice
+    }
+}
 
-        'Q' {
-            break main
-        }
-
-        default {
-            if ($choice -match '^\d+$') {
-
-                $index = [int]$choice - 1
-
-                if ($index -ge 0 -and $index -lt $services.Count) {
-
-                    $name = $services[$index]
-                    $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
-
-                    if (-not $svc) {
-                        Write-Host ""
-                        Write-Host "$name nao foi encontrado." -ForegroundColor Red
-                        Start-Sleep -Seconds 1
-                    }
-                    elseif ($svc.Status -eq 'Running') {
-                        Write-Host ""
-                        Write-Host "$name ja esta ativo." -ForegroundColor Green
-                        Start-Sleep -Seconds 1
-                    }
-                    else {
-                        Start-ServiceAsAdmin -Names @($name)
-                    }
-                }
-            }
+# ---------- loop ----------
+Write-Host "$E[?1049h$E[?25l" -NoNewline   # ecrã alternativo + esconde cursor
+try {
+    while ($true) {
+        Draw
+        $c = Read-Choice
+        if ($c -eq 'Q') { break }
+        if ($c -eq 'A' -and $missing.Count) { Enable-Services $missing }
+        if ($c -match '^\d$') {
+            $idx = if ($c -eq '0') { 9 } else { [int]$c - 1 }
+            $n = @($services.Keys)[$idx]
+            if ($n -and $missing -contains $n) { Enable-Services @($n) }
         }
     }
+} finally {
+    Write-Host "$E[?25h$E[?1049l" -NoNewline   # repõe ecrã e cursor
+    $ok = $services.Count - $missing.Count
+    if ($missing.Count -eq 0) { Write-Host ("`n  " + $green + '●' + $white + " RelaxPvP Pre-Scan: $ok/$($services.Count) ativos, pronto para a verificação." + $R + "`n") }
+    else { Write-Host ("`n  " + $red + '●' + $white + " RelaxPvP Pre-Scan: $ok/$($services.Count) ativos, faltam: " + $soft + ($missing -join ', ') + $R + "`n") }
 }
